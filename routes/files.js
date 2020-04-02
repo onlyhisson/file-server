@@ -2,65 +2,260 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const fs = require('fs');
+require('dotenv').config();
 
-const FILE_FORDER = '/home/finl_dump';
+const SEL_DATE_LENGTH = 7;                              // 몇일 전까지의 파일 조회 조건
+const FILE_PATH = '/home/fbn/finl_dump';                // 최소단위 블럭데이터 파일 path
+const TOTAL_DATA_FILE_PATH = '/home/fbn/finl_dump_tmp'; // 전체, 년, 월 단위 블럭데이터 파일 path
+const DATE_TO_ENG = {
+    1: "Jan",
+    2: "Feb",
+    3: "Mar",
+    4: "Apr",
+    5: "May",
+    6: "June",
+    7: "July",
+    8: "Aug",
+    9: "Sept",
+    10: "Oct",
+    11: "Nov",
+    12: "Dec"
+}
 
-let FILE_INFO_LIST = [];
-
-setInterval(function() {
-    setFileInfo();
-}, 3000);
+let FILE_INFO_LIST = [];        // 파일 정보 Object Array 변수
+setInterval(async function(){   // 주기적으로 미리 파일 리스트 저장
+    FILE_INFO_LIST = await getEditFileInfos(FILE_PATH); 
+},3000);
 
 /************************************************************* 
  * prefix : /files
-**************************************************************/
+**************************************************************
 
-/* 파일 리스트 GET */
-router.get('/list', function (req, res) {
-    let obj = {
-        status: 0,
-        fileLength: FILE_INFO_LIST.length,
-        fileInfo: FILE_INFO_LIST
-    }
-    res.jsonp(JSON.stringify(obj));
-    //res.jsonp(req.query.callback + '('+ JSON.stringify(obj) + ');');
-    //res.send(obj);
+/* 파일 리스트 GET (전체보기)*/
+router.get('/list', async function (req, res) {
+    const yearArr = await getFileList(FILE_PATH);
+    try {
+        const totalObj = await getEditFileInfo(TOTAL_DATA_FILE_PATH);
+        console.log(totalObj);
+        let fileArr = FILE_INFO_LIST.slice();
+        fileArr.unshift(totalObj);
+        const obj = {
+            status: 0,
+            yearArr, 
+            reqDate: [0,0,0],
+            monthArr: DATE_TO_ENG,
+            fileLength: fileArr.length,
+            fileInfo: fileArr
+        }
+        responseHandler(obj, res);
+    } catch (err) {
+        errorHandler(err, res);
+    };
+});
+
+/* 파일 리스트 조건 GET */
+router.get('/list/:yy/:mm/:dd', async function (req, res) {
+
+    const yearArr = await getFileList(FILE_PATH);
+    const yy = req.params.yy;
+    const mm = DATE_TO_ENG[Number(req.params.mm)];
+    const dd = req.params.dd;
+    const path = `${FILE_PATH}/${yy}/${mm}/${dd}`;
+
+    try {
+        const fileArr = await getEditFileInfos(path);
+        const obj = {
+            status: 0,
+            yearArr,
+            reqDate: [yy, req.params.mm, dd],
+            monthArr: DATE_TO_ENG,
+            fileLength: fileArr.length,
+            fileInfo: fileArr
+        }
+        responseHandler(obj, res);
+    } catch (err) {
+        errorHandler(err, res);
+    };
+});
+
+/* 파일 리스트 조건 GET _ dd  */
+router.get('/list/:yy/:mm', async function (req, res) {
+    const yearArr = await getFileList(FILE_PATH);
+    const yy = req.params.yy;
+    const mm = DATE_TO_ENG[Number(req.params.mm)];
+    const path = `${FILE_PATH}/${yy}/${mm}`;
+    
+    try {
+        const fileArr = await getEditFileInfos(path);
+        const obj = {
+            status: 0,
+            yearArr,
+            reqDate: [yy, req.params.mm,0],
+            monthArr: DATE_TO_ENG,
+            fileLength: fileArr.length,
+            fileInfo: fileArr
+        }
+        responseHandler(obj, res);
+    } catch (err) {
+        errorHandler(err, res);
+    };
+});
+
+/* 파일 리스트 조건 GET _ mm  */
+router.get('/list/:yy', async function (req, res) {
+    const yearArr = await getFileList(FILE_PATH);
+    const yy = req.params.yy;    
+    const path = `${FILE_PATH}/${yy}`;
+
+    try {
+        const totalObj = await getEditFileInfo(`${TOTAL_DATA_FILE_PATH}/${yy}`);
+        let fileArr = await getEditFileInfos(path);
+        fileArr.unshift(totalObj);
+        const obj = {
+            status: 0,
+            yearArr,
+            reqDate: [yy, 0,0],
+            monthArr: DATE_TO_ENG,
+            fileLength: fileArr.length,
+            fileInfo: fileArr
+        }
+        responseHandler(obj, res);
+    } catch (err) {
+        errorHandler(err, res);
+    };
 });
 
 /* 파일 다운로드 */
 router.get('/download/:filename', function (req, res) {
     const fileName = req.params.filename;
-    res.download(`${FILE_FORDER}/${fileName}`);
+    console.log(fileName);
+    let dateArr = fileName.split('-');
+    let path_t = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
+    res.download(path_t);
 });
 
-/* 가공된 파일 정보 리스트 저장 */
-async function setFileInfo() {
-    let fileTempInfo = [];
-    let fileList = await getFileList();
-    fileList.forEach(async(el, idx) => {
-        let fileInfo = await getFileInfo(el);
-        let hash = await fileHash(el, 'md5');
-        let jsonObj = {
-            fileName: el,
-            size: fileInfo.size,
-            md5: hash,
-            date: fileInfo.birthtimeMs
-        };
-        fileTempInfo.unshift(jsonObj)
-        if(fileList.length == idx+1) {
-            //fileTempInfo.sort(function(a, b) {
-            //    return a.size > b.size ? -1 : a.size < b.size ? 1 : 0;
-            //});
-            FILE_INFO_LIST = fileTempInfo;
-        }
-    })
+
+///////////////////////////////////////////////////////////////////////////////
+// function
+///////////////////////////////////////////////////////////////////////////////
+
+/* 
+    @author onlyhisson
+    @param  string path 파일 리스트를 조회할 최상위 폴더 경로
+    @return 각 파일의 이름, 크기, 생성일, md5 데이터 Object Array
+*/
+async function getEditFileInfos(path) {
+    const result = await getFiles(path);
+    let fileArr = [];
+    for (const item of result) {
+        let temp = {};
+        let file_name = item.split('/').pop(); //파일의 마지막 이름만 들어감.
+        temp = await editFiles(file_name);
+        fileArr.unshift(temp);
+    };
+
+    return fileArr.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)); // desc soring(date)
 };
 
-/* 파일 폴더 */
-function getFileList() {
+async function getEditFileInfo(path) {
+    const path_t = await getFileOne(path);
+    const fileName = path_t.split('/').pop();
+    const fileInfo = await getFileInfo(path_t);
+    const hash = await fileHash(path_t, 'md5');
+    const jsonObj = {
+        fileName: fileName,
+        size: fileInfo.size,
+        md5: hash,
+        date: fileInfo.birthtimeMs
+    };
+    return jsonObj
+};
+
+// 다운로드 파일 데이터 초기화
+async function setFileInfo(dates) {
+
+    let dateDir = [];
+    let fileList = [];
+    let fileTempInfo = [];
+
+    for(let i=0; i<dates; i++) {
+        let pathOne = '';
+        let settingDate = new Date();
+        settingDate.setDate(settingDate.getDate()-i); // i일 전
+        let yy2 = settingDate.getFullYear();
+        let mm2 = DATE_TO_ENG[settingDate.getMonth() + 1];
+        let dd2 = settingDate.getDate(); dd2 = (dd2 < 10) ? '0' + dd2 : dd2;
+        
+        pathOne = `${FILE_PATH}/${yy2}/${mm2}/${dd2}`
+        dateDir.push(pathOne);
+    }
+
+    fileList = await concatFileArr(dateDir);
+    fileList.sort(compStringReverse);
+    
+    /*
+    const nowDate = new Date();
+    const yy = nowDate.getFullYear();
+    const mm = DATE_TO_ENG[nowDate.getMonth() + 1];
+    let dd = nowDate.getDate(); dd = (dd < 10) ? '0' + dd : dd;
+
+    let path = `${FILE_PATH}/${yy}/${mm}/${dd}`;
+    */
+
+    for (const item of fileList) {
+        let temp = {};
+        temp = await editFiles(item);
+        fileTempInfo.unshift(temp);
+    };
+
+    FILE_INFO_LIST = fileTempInfo;
+};
+
+/* 
+    @author onlyhisson
+    @param  string fileName 파일 이름
+    @return 해당 파일의 이름, 크기, 생성일, md5 데이터 Object
+    @note 파일 정보 edit
+*/
+async function editFiles(fileName) {
+    let dateArr = fileName.split('-');
+    let path_t = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
+    let fileInfo = await getFileInfo(path_t);
+    let hash = await fileHash(path_t, 'md5');
+    let jsonObj = {
+        fileName: fileName,
+        size: fileInfo.size,
+        md5: hash,
+        date: fileInfo.birthtimeMs
+    };
+    return jsonObj;
+};
+
+// 일자별 파일명 배열 합쳐서 return 
+async function concatFileArr(array) {
+    let fileArr = [];
+    for (const item of array) {
+      let result = await getFileList(item);
+      fileArr = fileArr.concat(result);
+    };
+    return fileArr
+};
+
+// 내림차순 옵션
+function compStringReverse(a, b) {
+    if (a > b) return -1;
+    if (b > a) return 1;
+    return 0;
+};  
+
+/* 해당 경로 폴더 내 파일 리스트 return  */
+function getFileList(fileFullName) {
     return new Promise((resolve, reject) => {
-        fs.readdir(FILE_FORDER, function (error, fileList) {
-            if(error) {
+        fs.readdir(fileFullName, function (error, fileList) {
+            if(error && error.code == 'ENOENT') {
+                resolve([])
+            } 
+            if (error) {     
                 reject(error);
             } else {
                 resolve(fileList);
@@ -71,13 +266,13 @@ function getFileList() {
 
 /* 파일 hash 데이터 */
 function fileHash(fileName, algorithm) {
-    let filename = `${FILE_FORDER}/${fileName}`;
+    
     return new Promise((resolve, reject) => {
         // Algorithm depends on availability of OpenSSL on platform
         // Another algorithms: 'sha1', 'md5', 'sha256', 'sha512' ...
         let shasum = crypto.createHash(algorithm);
         try {
-            let s = fs.ReadStream(filename)
+            let s = fs.ReadStream(fileName)
             s.on('data', function (data) {
                 shasum.update(data)
             })
@@ -96,8 +291,8 @@ function fileHash(fileName, algorithm) {
 /* 파일 정보 */
 function getFileInfo(fileName) {
     return new Promise((resolve, reject) => {
-        fs.stat(`${FILE_FORDER}/${fileName}`, (err, stats) => {
-            if (err) { 
+        fs.stat(fileName, (err, stats) => {
+            if (err) {
                 return reject(err);
             }
             // console.log(stats);          				            // 파일 정보
@@ -116,17 +311,84 @@ function getFileInfo(fileName) {
     })
 }
 
-function formatdateBasic(timeStamp) {
-	let d = new Date(timeStamp);
 
-	yy = d.getFullYear();
-	mm = d.getMonth() + 1; mm = (mm < 10) ? '0' + mm : mm;
-	dd = d.getDate(); dd = (dd < 10) ? '0' + dd : dd;
-	hh = d.getHours(); hh = (hh < 10) ? '0' + hh : hh;
-	mi = d.getMinutes(); mi = (mi < 10) ? '0' + mi : mi;
-	se = d.getSeconds(); se = (se < 10) ? '0' + se : se;
-	
-	return '' + yy + '-' +  mm  + '-' + dd + ' ' + hh + ':' + mi + ':' + se;
+/* 
+    @author onlyhisson
+    @param  string dir 파일 경로
+    @param  array files_ 경로 내 파일 리스트
+    @return dir path 하위 모든 파일 리스트
+    @note   dir path 하위 모든 파일 조회
+*/
+async function getFiles (dir, files_) {
+    files_ = files_ || [];
+    let files = fs.readdirSync(dir);
+    for (let i in files) {
+        let name = dir + '/' + files[i];
+        if(fs.statSync(name).isDirectory()) {
+            getFiles(name, files_);
+        } else {
+            files_.push(name);
+        }
+    }
+    return files_;
+};
+
+/* 
+    @author onlyhisson
+    @param  string dir 파일 경로
+    @param  array files_ 경로 내 파일 리스트
+    @return dir path 하위 1개 파일
+    @note   dir path 하위 1개 파일
+*/
+async function getFileOne (dir) {
+    let fileArr = [];
+    const files = fs.readdirSync(dir);
+    for (let i in files) {
+        let name = dir + '/' + files[i];
+        if(fs.statSync(name).isFile()) {
+            fileArr.push(name);
+        }
+    }
+    return fileArr[0];
+};
+
+
+function formatdateBasic(timeStamp) {
+    let d = new Date(timeStamp);
+
+    yy = d.getFullYear();
+    mm = d.getMonth() + 1; mm = (mm < 10) ? '0' + mm : mm;
+    dd = d.getDate(); dd = (dd < 10) ? '0' + dd : dd;
+    hh = d.getHours(); hh = (hh < 10) ? '0' + hh : hh;
+    mi = d.getMinutes(); mi = (mi < 10) ? '0' + mi : mi;
+    se = d.getSeconds(); se = (se < 10) ? '0' + se : se;
+
+    return '' + yy + '-' + mm + '-' + dd + ' ' + hh + ':' + mi + ':' + se;
+};
+
+/* 
+    @author onlyhisson
+    @param  object obj 응답할 JSON 데이터 
+    @param  object res 응답 객체
+*/
+const responseHandler = (obj, res) => {
+    if(process.env.DEV == 'Y') {
+        res.json(obj);
+    } else {
+        res.jsonp(JSON.stringify(obj));
+    }
+};
+
+/* 
+    @author onlyhisson
+    @param  object err 에러 객체 
+    @param  object res 응답 객체
+*/
+const errorHandler = (err, res) => {
+    console.log(err);
+    res.json({
+        status: 1,
+    });
 };
 
 module.exports = router;

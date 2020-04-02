@@ -36,7 +36,6 @@ router.get('/list', async function (req, res) {
     const yearArr = await getFileList(FILE_PATH);
     try {
         const totalObj = await getEditFileInfo(TOTAL_DATA_FILE_PATH);
-        console.log(totalObj);
         let fileArr = FILE_INFO_LIST.slice();
         fileArr.unshift(totalObj);
         const obj = {

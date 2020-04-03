@@ -31,13 +31,21 @@ setInterval(async function(){   // 주기적으로 미리 파일 리스트 저�
  * prefix : /files
 **************************************************************
 
-/* 파일 리스트 GET (전체보기)*/
+/* 
+    @author onlyhisson
+    @param  object req
+    @param  object res
+    @return object json 데이터
+    @note   전체 파일 리스트 GET
+*/
 router.get('/list', async function (req, res) {
     const yearArr = await getFileList(FILE_PATH);
+    let fileArr= [];
+
     try {
         const totalObj = await getEditFileInfo(TOTAL_DATA_FILE_PATH);
-        let fileArr = FILE_INFO_LIST.slice();
-        fileArr.unshift(totalObj);
+        fileArr = FILE_INFO_LIST.slice();   // 파일 edit 정보 배열 복사
+        fileArr.unshift(totalObj);          // total 데이터를 배열 앞에 추가
         const obj = {
             status: 0,
             yearArr, 
@@ -52,9 +60,14 @@ router.get('/list', async function (req, res) {
     };
 });
 
-/* 파일 리스트 조건 GET */
+/* 
+    @author onlyhisson
+    @param  object req
+    @param  object res
+    @return object json 데이터
+    @note   일단위 파일 리스트 GET
+*/
 router.get('/list/:yy/:mm/:dd', async function (req, res) {
-
     const yearArr = await getFileList(FILE_PATH);
     const yy = req.params.yy;
     const mm = DATE_TO_ENG[Number(req.params.mm)];
@@ -77,15 +90,25 @@ router.get('/list/:yy/:mm/:dd', async function (req, res) {
     };
 });
 
-/* 파일 리스트 조건 GET _ dd  */
+/* 
+    @author onlyhisson
+    @param  object req
+    @param  object res
+    @return object json 데이터
+    @note   월단위 파일 리스트 GET
+*/
 router.get('/list/:yy/:mm', async function (req, res) {
     const yearArr = await getFileList(FILE_PATH);
     const yy = req.params.yy;
     const mm = DATE_TO_ENG[Number(req.params.mm)];
     const path = `${FILE_PATH}/${yy}/${mm}`;
-    
+    const totalDataPath = `${TOTAL_DATA_FILE_PATH}/${yy}/${mm}`;
+    let fileArr = [];
+
     try {
-        const fileArr = await getEditFileInfos(path);
+        const totalObj = await getEditFileInfo(totalDataPath);  // A 해당 월 total data get
+        fileArr = await getEditFileInfos(path);                 // B 해당 월 최소 unit 데이터 리스트
+        fileArr.unshift(totalObj);                              // A + B
         const obj = {
             status: 0,
             yearArr,
@@ -100,16 +123,25 @@ router.get('/list/:yy/:mm', async function (req, res) {
     };
 });
 
-/* 파일 리스트 조건 GET _ mm  */
+/* 
+    @author onlyhisson
+    @param  object req
+    @param  object res
+    @return object json 데이터
+    @note   년단위 파일 리스트 GET
+*/
 router.get('/list/:yy', async function (req, res) {
+
     const yearArr = await getFileList(FILE_PATH);
     const yy = req.params.yy;    
     const path = `${FILE_PATH}/${yy}`;
+    const totalDataPath = `${TOTAL_DATA_FILE_PATH}/${yy}`;
+    let fileArr = [];
 
     try {
-        const totalObj = await getEditFileInfo(`${TOTAL_DATA_FILE_PATH}/${yy}`);
-        let fileArr = await getEditFileInfos(path);
-        fileArr.unshift(totalObj);
+        const totalObj = await getEditFileInfo(totalDataPath);  // A 해당 월 total data get
+        fileArr = await getEditFileInfos(path);                 // B 해당 년 최소 unit 데이터 리스트
+        fileArr.unshift(totalObj);                              // A + B
         const obj = {
             status: 0,
             yearArr,
@@ -124,13 +156,41 @@ router.get('/list/:yy', async function (req, res) {
     };
 });
 
-/* 파일 다운로드 */
-router.get('/download/:filename', function (req, res) {
+/* 
+    @author onlyhisson
+    @param  object req
+    @param  object res
+    @return 파일
+    @note   파일 다운로드
+*/
+router.get('/download/:filename', async function (req, res) {
     const fileName = req.params.filename;
-    console.log(fileName);
-    let dateArr = fileName.split('-');
-    let path_t = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
-    res.download(path_t);
+    const fnParse = fileName.split('~');
+    const enMonth = Object.values(DATE_TO_ENG);
+    let fileFullName = '';
+
+    if (fnParse.length < 2) {   // minimum unit data
+        console.log(1);
+        const dateArr = fileName.split('-');
+        fileFullName = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
+        res.download(fileFullName);
+        return;
+    };
+
+    // 클라이언트가 응답 받은 때와 블록 데이터의 업데이트 때의 시간 차로 파일명이 다를 수 있기 때문에
+    // 요청 받은 파일명이 아닌 해당 경로의 파일 이름을 재조회 후 다운로드(전체, 년, 월 모두 해당)
+    if(fnParse[0] == 'FINL_ALL_DB') {   // total data
+        console.log(2);
+        fileFullName = await getFileOne(TOTAL_DATA_FILE_PATH);
+    } else if(enMonth.includes(fnParse[0])) {  // month total data
+        console.log(3);
+        const yy = fnParse[1].split('-')[2].substring(0,4);
+        fileFullName = await getFileOne(`${TOTAL_DATA_FILE_PATH}/${yy}/${fnParse[0]}`);
+    } else {    // year total data
+        console.log(4);
+        fileFullName = await getFileOne(`${TOTAL_DATA_FILE_PATH}/${fnParse[0]}`);
+    }
+    res.download(fileFullName);
 });
 
 
@@ -156,11 +216,16 @@ async function getEditFileInfos(path) {
     return fileArr.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)); // desc soring(date)
 };
 
+/* 
+    @author onlyhisson
+    @param  string path 파일 리스트를 조회할 최상위 폴더 경로
+    @return 한 파일의 이름, 크기, 생성일, md5 데이터 Object
+*/
 async function getEditFileInfo(path) {
-    const path_t = await getFileOne(path);
-    const fileName = path_t.split('/').pop();
-    const fileInfo = await getFileInfo(path_t);
-    const hash = await fileHash(path_t, 'md5');
+    const fileFullName = await getFileOne(path);
+    const fileName = fileFullName.split('/').pop();
+    const fileInfo = await getFileInfo(fileFullName);
+    const hash = await fileHash(fileFullName, 'md5');
     const jsonObj = {
         fileName: fileName,
         size: fileInfo.size,
@@ -218,9 +283,9 @@ async function setFileInfo(dates) {
 */
 async function editFiles(fileName) {
     let dateArr = fileName.split('-');
-    let path_t = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
-    let fileInfo = await getFileInfo(path_t);
-    let hash = await fileHash(path_t, 'md5');
+    let fileFullName = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
+    let fileInfo = await getFileInfo(fileFullName);
+    let hash = await fileHash(fileFullName, 'md5');
     let jsonObj = {
         fileName: fileName,
         size: fileInfo.size,
@@ -248,9 +313,9 @@ function compStringReverse(a, b) {
 };  
 
 /* 해당 경로 폴더 내 파일 리스트 return  */
-function getFileList(fileFullName) {
+function getFileList(path) {
     return new Promise((resolve, reject) => {
-        fs.readdir(fileFullName, function (error, fileList) {
+        fs.readdir(path, function (error, fileList) {
             if(error && error.code == 'ENOENT') {
                 resolve([])
             } 
@@ -315,7 +380,7 @@ function getFileInfo(fileName) {
     @author onlyhisson
     @param  string dir 파일 경로
     @param  array files_ 경로 내 파일 리스트
-    @return dir path 하위 모든 파일 리스트
+    @return array path 하위 모든 파일 리스트
     @note   dir path 하위 모든 파일 조회
 */
 async function getFiles (dir, files_) {
@@ -336,7 +401,7 @@ async function getFiles (dir, files_) {
     @author onlyhisson
     @param  string dir 파일 경로
     @param  array files_ 경로 내 파일 리스트
-    @return dir path 하위 1개 파일
+    @return string path 하위 1개 파일
     @note   dir path 하위 1개 파일
 */
 async function getFileOne (dir) {
@@ -384,10 +449,17 @@ const responseHandler = (obj, res) => {
     @param  object res 응답 객체
 */
 const errorHandler = (err, res) => {
-    console.log(err);
-    res.json({
+    const obj = {
         status: 1,
-    });
+        error: {
+            code: err.code || 'ERROR',
+            msg: err.message || 'error'
+        }
+    };
+    console.log('################# errorHandler start #################');
+    console.log(obj);
+    console.log('################# errorHandler end   #################');
+    res.json(obj);
 };
 
 module.exports = router;

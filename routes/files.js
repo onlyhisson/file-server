@@ -131,7 +131,6 @@ router.get('/list/:yy/:mm', async function (req, res) {
     @note   년단위 파일 리스트 GET
 */
 router.get('/list/:yy', async function (req, res) {
-
     const yearArr = await getFileList(FILE_PATH);
     const yy = req.params.yy;    
     const path = `${FILE_PATH}/${yy}`;
@@ -170,7 +169,6 @@ router.get('/download/:filename', async function (req, res) {
     let fileFullName = '';
 
     if (fnParse.length < 2) {   // minimum unit data
-        console.log(1);
         const dateArr = fileName.split('-');
         fileFullName = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
         res.download(fileFullName);
@@ -180,14 +178,11 @@ router.get('/download/:filename', async function (req, res) {
     // 클라이언트가 응답 받은 때와 블록 데이터의 업데이트 때의 시간 차로 파일명이 다를 수 있기 때문에
     // 요청 받은 파일명이 아닌 해당 경로의 파일 이름을 재조회 후 다운로드(전체, 년, 월 모두 해당)
     if(fnParse[0] == 'FINL_ALL_DB') {   // total data
-        console.log(2);
         fileFullName = await getFileOne(TOTAL_DATA_FILE_PATH);
     } else if(enMonth.includes(fnParse[0])) {  // month total data
-        console.log(3);
         const yy = fnParse[1].split('-')[2].substring(0,4);
         fileFullName = await getFileOne(`${TOTAL_DATA_FILE_PATH}/${yy}/${fnParse[0]}`);
     } else {    // year total data
-        console.log(4);
         fileFullName = await getFileOne(`${TOTAL_DATA_FILE_PATH}/${fnParse[0]}`);
     }
     res.download(fileFullName);
@@ -282,11 +277,11 @@ async function setFileInfo(dates) {
     @note 파일 정보 edit
 */
 async function editFiles(fileName) {
-    let dateArr = fileName.split('-');
-    let fileFullName = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
-    let fileInfo = await getFileInfo(fileFullName);
-    let hash = await fileHash(fileFullName, 'md5');
-    let jsonObj = {
+    const dateArr = fileName.split('-');
+    const fileFullName = `${FILE_PATH}/${dateArr[2].substring(0,4)}/${dateArr[1]}/${dateArr[0]}/${fileName}`
+    const fileInfo = await getFileInfo(fileFullName);
+    const hash = await fileHash(fileFullName, 'md5');
+    const jsonObj = {
         fileName: fileName,
         size: fileInfo.size,
         md5: hash,
@@ -384,7 +379,7 @@ function getFileInfo(fileName) {
     @note   dir path 하위 모든 파일 조회
 */
 async function getFiles (dir, files_) {
-    files_ = files_ || [];
+    let files_ = files_ || [];
     let files = fs.readdirSync(dir);
     for (let i in files) {
         let name = dir + '/' + files[i];
@@ -418,7 +413,7 @@ async function getFileOne (dir) {
 
 
 function formatdateBasic(timeStamp) {
-    let d = new Date(timeStamp);
+    const d = new Date(timeStamp);
 
     yy = d.getFullYear();
     mm = d.getMonth() + 1; mm = (mm < 10) ? '0' + mm : mm;

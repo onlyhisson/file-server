@@ -379,7 +379,7 @@ function getFileInfo(fileName) {
     @note   dir path 하위 모든 파일 조회
 */
 async function getFiles (dir, files_) {
-    let files_ = files_ || [];
+    files_ = files_ || [];
     let files = fs.readdirSync(dir);
     for (let i in files) {
         let name = dir + '/' + files[i];

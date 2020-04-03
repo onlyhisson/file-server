@@ -41,10 +41,14 @@ app.use(function(req, res, next) {
 if (app.get('env') === 'development') {
     app.use(function(err, req, res, next) {
         res.status(err.status || 500);
-        res.render('error', {
-            message: err.message,
-            error: err
-        });
+        const obj = {
+            status: 1,
+            error: {
+                code: err.code || 'ERROR',
+                msg: err.message || 'error'
+            }
+        };
+        res.json(obj);
     });
 }
 
@@ -52,10 +56,14 @@ if (app.get('env') === 'development') {
 // no stacktraces leaked to user
 app.use(function(err, req, res, next) {
     res.status(err.status || 500);
-    res.render('error', {
-        message: err.message,
-        error: {}
-    });
+    const obj = {
+        status: 1,
+        error: {
+            code: err.code || 'ERROR',
+            msg: err.message || 'error'
+        }
+    };
+    res.json(obj);
 });
 
 app.set('port', process.env.PORT || 3000);

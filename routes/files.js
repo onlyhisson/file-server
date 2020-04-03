@@ -49,13 +49,14 @@ router.get('/list', async function (req, res) {
         const obj = {
             status: 0,
             yearArr, 
-            reqDate: [0,0,0],
+            reqDate: [0, 0, 0],
             monthArr: DATE_TO_ENG,
             fileLength: fileArr.length,
             fileInfo: fileArr
         }
         responseHandler(obj, res);
     } catch (err) {
+        err.reqDate = [0, 0, 0];
         errorHandler(err, res);
     };
 });
@@ -86,6 +87,7 @@ router.get('/list/:yy/:mm/:dd', async function (req, res) {
         }
         responseHandler(obj, res);
     } catch (err) {
+        err.reqDate = [yy, req.params.mm, dd];
         errorHandler(err, res);
     };
 });
@@ -112,13 +114,14 @@ router.get('/list/:yy/:mm', async function (req, res) {
         const obj = {
             status: 0,
             yearArr,
-            reqDate: [yy, req.params.mm,0],
+            reqDate: [yy, req.params.mm, 0],
             monthArr: DATE_TO_ENG,
             fileLength: fileArr.length,
             fileInfo: fileArr
         }
         responseHandler(obj, res);
     } catch (err) {
+        err.reqDate = [yy, req.params.mm, 0];
         errorHandler(err, res);
     };
 });
@@ -144,13 +147,14 @@ router.get('/list/:yy', async function (req, res) {
         const obj = {
             status: 0,
             yearArr,
-            reqDate: [yy, 0,0],
+            reqDate: [yy, 0, 0],
             monthArr: DATE_TO_ENG,
             fileLength: fileArr.length,
             fileInfo: fileArr
         }
         responseHandler(obj, res);
     } catch (err) {
+        err.reqDate = [yy, 0, 0];
         errorHandler(err, res);
     };
 });
@@ -443,7 +447,8 @@ const responseHandler = (obj, res) => {
     @param  object err 에러 객체 
     @param  object res 응답 객체
 */
-const errorHandler = (err, res) => {
+const errorHandler = async (err, res) => {
+    const yearArr = await getFileList(FILE_PATH);
     const code = err.code || 'ERROR';
     const errMsg = {
         ERROR: 'error',
@@ -451,6 +456,11 @@ const errorHandler = (err, res) => {
     };
     const obj = {
         status: 1,
+        yearArr,
+        monthArr: DATE_TO_ENG,
+        fileLength: 0,
+        fileInfo: [],
+        reqDate: err.reqDate || [0, 0, 0],
         error: {
             code,
             msg: errMsg[code]

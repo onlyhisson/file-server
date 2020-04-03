@@ -444,17 +444,23 @@ const responseHandler = (obj, res) => {
     @param  object res 응답 객체
 */
 const errorHandler = (err, res) => {
+    const code = err.code || 'ERROR';
+    const errMsg = {
+        ERROR: 'error',
+        ENOENT: 'no such file or directory'
+    };
     const obj = {
         status: 1,
         error: {
-            code: err.code || 'ERROR',
-            msg: err.message || 'error'
+            code,
+            msg: errMsg[code]
         }
     };
     console.log('################# errorHandler start #################');
     console.log(obj);
     console.log('################# errorHandler end   #################');
-    res.json(obj);
+    //res.json(obj);
+    res.jsonp(JSON.stringify(obj));
 };
 
 module.exports = router;
